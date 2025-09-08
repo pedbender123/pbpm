@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login / Registro - PBPM</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 flex items-center justify-center min-h-screen">
+
+    <div class="absolute top-4 right-4">
+        <button id="theme-toggle" class="p-2 rounded-full bg-white/50 dark:bg-gray-800/50 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+            <svg id="theme-toggle-dark-icon" class="h-6 w-6 hidden text-gray-800 dark:text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+            </svg>
+            <svg id="theme-toggle-light-icon" class="h-6 w-6 hidden text-gray-800 dark:text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+        </button>
+    </div>
+
+    <div class="w-full max-w-md">
+        <div class="bg-white dark:bg-gray-950 rounded-xl shadow-lg p-8">
+            <h2 class="text-2xl font-bold text-center text-gray-900 dark:text-white mb-8">Acesse sua Conta</h2>
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="bg-red-100 text-red-700 p-3 rounded-lg mb-4">{{ message }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            <form method="POST" action="{{ url_for('auth') }}">
+                <div class="mb-4">
+                    <label for="username" class="block text-gray-700 dark:text-gray-300 mb-2">Usuário</label>
+                    <input type="text" id="username" name="username" class="w-full bg-white border border-gray-300 dark:border-gray-600 text-gray-900 focus:ring-purple-500 focus:border-purple-500 rounded-lg p-3" required>
+                </div>
+                <div class="mb-6">
+                    <label for="password" class="block text-gray-700 dark:text-gray-300 mb-2">Senha</label>
+                    <input type="password" id="password" name="password" class="w-full bg-white border border-gray-300 dark:border-gray-600 text-gray-900 focus:ring-purple-500 focus:border-purple-500 rounded-lg p-3" required>
+                </div>
+                <div class="flex items-center justify-between gap-4">
+                    <button type="submit" name="login" class="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white font-bold py-3 px-4 rounded-lg hover:opacity-90 transition-opacity">
+                        Entrar
+                    </button>
+                    <button type="submit" name="register" class="w-full bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white font-bold py-3 px-4 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">
+                        Registrar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <script src="{{ url_for('static', filename='js/script.js') }}" defer></script>
+</body>
+</html>
