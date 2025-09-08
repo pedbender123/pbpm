@@ -25,7 +25,7 @@ jobs:
 
         # Comando SSH para executar o deploy
         ssh ${{ secrets.VPS_SSH_USERNAME }}@${{ secrets.VPS_SSH_HOST }} << 'EOF'
-          # Navega para o diretório do projeto (ou cria se não existir)
+          # Navega para o diretório do projeto (ou clona se não existir)
           cd ~/pbpm || git clone https://github.com/${{ github.repository }}.git ~/pbpm
 
           # Entra na pasta e atualiza o código
