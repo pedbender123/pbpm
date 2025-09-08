@@ -37,6 +37,6 @@ jobs:
 
           # Usa Docker Compose para construir e rodar os containers em modo detached (-d)
           # --build força a reconstrução das imagens se o Dockerfile mudou
-          docker-compose up --build -d
+          docker compose up --build -d
 
         EOF
