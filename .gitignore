@@ -1,0 +1,9 @@
+# Arquivos de ambiente
+.env
+
+# Diretórios de cache do Python
+__pycache__/
+*.pyc
+
+# Outros
+.DS_Store

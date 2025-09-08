@@ -1,0 +1,36 @@
+services:
+  web:
+    build: .
+    ports:
+      - "5001:8000"
+    env_file:
+      - .env
+    # Adicionamos 'depends_on' para que o container 'web' espere pelo 'db'
+    depends_on:
+      db:
+        # A condição 'service_healthy' garante que o app só inicie
+        # quando o banco de dados estiver pronto para aceitar conexões
+        condition: service_healthy
+    restart: unless-stopped
+
+  # --- NOVO SERVIÇO DE BANCO DE DADOS ---
+  db:
+    # Usa a imagem oficial do PostgreSQL versão 13
+    image: postgres:13
+    # Mapeia um volume para persistir os dados do banco
+    # Assim, seus dados não são perdidos ao reiniciar o container
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    env_file:
+      - .env
+    # Verifica se o banco de dados está pronto para receber conexões
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+# Define o volume nomeado que será usado pelo serviço 'db'
+volumes:
+  postgres_data:
