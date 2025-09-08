@@ -2,7 +2,7 @@ services:
   web:
     build: .
     ports:
-      - "127.0.0.1:5001:8000" # A aplicação só será acessível pela própria máquina
+      - "0.0.0.0:5001:8000" # A aplicação só será acessível pela própria máquina
     env_file:
       - .env
     depends_on:
