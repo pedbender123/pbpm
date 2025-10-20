@@ -14,11 +14,10 @@ app.config['LEADS_FOLDER'] = 'leads'
 if not os.path.exists(app.config['LEADS_FOLDER']):
     os.makedirs(app.config['LEADS_FOLDER'])
 
-# Conecta aos outros containers usando os nomes dos serviços
 db_user = os.getenv('POSTGRES_USER')
 db_password = os.getenv('POSTGRES_PASSWORD')
 db_name = os.getenv('POSTGRES_DB')
-db_host = 'db' # Nome do serviço do banco de dados
+db_host = 'db'
 
 database_uri = f'postgresql://{db_user}:{db_password}@{db_host}:5432/{db_name}'
 app.config['SQLALCHEMY_DATABASE_URI'] = database_uri
@@ -53,18 +52,16 @@ class ChatMessage(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# --- ROTAS PRINCIPAIS (sem alteração) ---
+# --- ROTAS (sem alteração no geral) ---
 @app.route('/')
-def index():
-    return render_template('index.html')
+def index(): return render_template('index.html')
 
 @app.route('/auth', methods=['GET', 'POST'])
 def auth():
     if current_user.is_authenticated: return redirect(url_for('dashboard'))
     if request.method == 'POST':
         if 'register' in request.form:
-            username = request.form['username']
-            password = request.form['password']
+            username, password = request.form['username'], request.form['password']
             if User.query.filter_by(username=username).first():
                 flash('Usuário já existe.', 'error')
                 return redirect(url_for('auth'))
@@ -118,43 +115,130 @@ def project_chat(project_id):
     if project.owner != current_user: return "Acesso não autorizado", 403
     return render_template('project_chat.html', project=project)
 
-# --- ROTA DO CHAT EXTERNO ---
-@app.route('/api/external_chat', methods=['POST'])
-def external_chat():
-    data = request.get_json()
-    user_message = data.get('message', '')
-    conversation_history = data.get('history', [])
-    conversation_history.append({"role": "user", "content": user_message})
-    try:
-        with open('prompt.txt', 'r', encoding='utf-8') as f:
-            system_prompt = f.read().split('---')[0].strip()
-    except FileNotFoundError: return jsonify({"error": "Arquivo de prompt não encontrado."}), 500
-    messages_for_api = [{"role": "system", "content": system_prompt}] + conversation_history
-    try:
-        # **A MUDANÇA ESTÁ AQUI**
-        # Conecta ao container do Ollama pelo nome do serviço
-        ollama_url = "http://ollama:11434/api/chat"
-        payload = {"model": "llama3:8b", "messages": messages_for_api, "stream": False}
-        response = requests.post(ollama_url, json=payload, timeout=30)
-        response.raise_for_status()
-        response_data = response.json()
-        ai_message = response_data['message']['content']
-        conversation_history.append({"role": "assistant", "content": ai_message})
-        if "##LEAD_CAPTURED##" in ai_message:
-            ai_message = ai_message.replace("##LEAD_CAPTURED##", "").strip()
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"lead_{timestamp}.txt"
-            filepath = os.path.join(app.config['LEADS_FOLDER'], filename)
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write("--- Lead Capturado ---\n\n")
-                for msg in conversation_history:
-                    f.write(f"[{msg['role'].capitalize()}]: {msg['content']}\n\n")
-        return jsonify({'text': ai_message, 'history': conversation_history})
-    except requests.exceptions.RequestException as e:
-        return jsonify({'text': f"Não consegui me conectar ao assistente. O serviço pode estar iniciando. Tente de novo em instantes. (Erro: {e})", 'history': conversation_history}), 500
-    except Exception as e: return jsonify({'error': str(e)}), 500
+# --- NOVA LÓGICA DO CHAT EXTERNO ---
 
-# --- CHAT INTERNO E FINALIZE (sem alteração) ---
+LEAD_QUESTIONS = [
+    "Olá! Sou o assistente de projetos da PBPM. Para começarmos, qual o seu nome?",
+    "Prazer, {name}! Agora, pode me informar seu melhor contato (email ou WhatsApp)?",
+    "Obrigado! Vamos ao projeto. **(What?)** O que exatamente você quer construir? Descreva a ideia principal.",
+    "Entendido. **(Why?)** Por que esse projeto é importante? Qual o principal problema que ele resolve?",
+    "Interessante. **(Who?)** Quem serão os usuários do sistema? Para quem ele se destina?",
+    "Ok. **(Where?)** Onde esse sistema será usado? Em um site (web), aplicativo de celular (mobile) ou ambos?",
+    "Estamos quase no fim! **(When?)** Você tem algum prazo em mente ou data importante para o lançamento?",
+]
+
+def call_ollama(system_prompt, user_content):
+    """Função auxiliar para chamar a API do Ollama de forma segura."""
+    try:
+        ollama_url = "http://ollama:11434/api/chat"
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content}
+        ]
+        payload = {"model": "llama3:8b", "messages": messages, "stream": False}
+        response = requests.post(ollama_url, json=payload, timeout=45)
+        response.raise_for_status()
+        return response.json()['message']['content'], None
+    except requests.exceptions.RequestException as e:
+        error_message = f"Não consegui me conectar ao assistente. O serviço pode estar sobrecarregado. (Erro: {e})"
+        return None, error_message
+    except Exception as e:
+        return None, f"Ocorreu um erro inesperado: {str(e)}"
+
+def save_lead_to_file(answers, complement=""):
+    """Salva o lead completo em um arquivo de texto."""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"lead_{answers.get('Nome', 'desconhecido')}_{timestamp}.txt"
+    filepath = os.path.join(app.config['LEADS_FOLDER'], filename)
+    
+    content = f"""--- Lead Capturado ---
+Nome: {answers.get('Nome', 'N/A')}
+Contato: {answers.get('Contato', 'N/A')}
+
+--- Briefing do Projeto ---
+1. O quê (What?):
+{answers.get('What?', 'N/A')}
+
+2. Por quê (Why?):
+{answers.get('Why?', 'N/A')}
+
+3. Quem (Who?):
+{answers.get('Who?', 'N/A')}
+
+4. Onde (Where?):
+{answers.get('Where?', 'N/A')}
+
+5. Quando (When?):
+{answers.get('When?', 'N/A')}
+"""
+    if complement:
+        content += f"\n--- Complemento do Cliente ---\n{complement}\n"
+        
+    with open(filepath, 'w', encoding='utf-8') as f:
+        f.write(content)
+
+@app.route('/api/external_chat', methods=['POST'])
+def external_chat_enxuto():
+    data = request.get_json()
+    current_step = data.get('step', 0)
+    user_message = data.get('message', '')
+    answers = data.get('answers', {})
+
+    # Etapa 0: Início
+    if current_step == 0:
+        return jsonify({'text': LEAD_QUESTIONS[0], 'step': 1, 'answers': {}})
+
+    # Etapas de Perguntas Fixas (1 a 7)
+    if 1 <= current_step <= len(LEAD_QUESTIONS):
+        # Armazena a resposta anterior
+        question_key = LEAD_QUESTIONS[current_step - 1].split('**')[0].strip()
+        if 'nome' in question_key.lower():
+            answers['Nome'] = user_message
+        elif 'contato' in question_key.lower():
+            answers['Contato'] = user_message
+        else:
+            # Extrai a chave do 5W (ex: "What?")
+            key_5w = LEAD_QUESTIONS[current_step - 1].split('(')[1].split(')')[0]
+            answers[key_5w] = user_message
+
+        # Se ainda houver perguntas a fazer
+        if current_step < len(LEAD_QUESTIONS):
+            next_question = LEAD_QUESTIONS[current_step]
+            if '{name}' in next_question:
+                next_question = next_question.format(name=answers.get('Nome', ''))
+            return jsonify({'text': next_question, 'step': current_step + 1, 'answers': answers})
+        
+        # Se for a última pergunta, chama a IA para o primeiro resumo
+        else:
+            prompt_content = f"Respostas do cliente:\n{answers}"
+            system_prompt = "Você é um assistente de projetos. Com base nas respostas do cliente, crie um resumo conciso e bem estruturado do projeto. Finalize perguntando de forma clara se o cliente gostaria de adicionar ou alterar alguma informação."
+            summary, error = call_ollama(system_prompt, prompt_content)
+            if error: return jsonify({'text': error, 'step': 'error'})
+            
+            return jsonify({'text': summary, 'step': 'summary_review', 'answers': answers})
+
+    # Etapa de Revisão do Resumo
+    elif current_step == 'summary_review':
+        # Se o usuário não quiser complementar
+        if any(keyword in user_message.lower() for keyword in ['não', 'nao', 'tudo certo', 'perfeito', 'correto']):
+            save_lead_to_file(answers)
+            final_message = "Entendido! Agradecemos muito pelo seu tempo. Suas informações foram salvas e nossa equipe entrará em contato em breve. Tenha um ótimo dia!"
+            return jsonify({'text': final_message, 'step': 'finished', 'answers': answers})
+        # Se o usuário quiser complementar
+        else:
+            return jsonify({'text': "Ótimo! Por favor, escreva o que você gostaria de adicionar ou modificar.", 'step': 'adding_complement', 'answers': answers})
+
+    # Etapa de Adicionar Complemento
+    elif current_step == 'adding_complement':
+        complement = user_message
+        save_lead_to_file(answers, complement)
+        final_message = "Perfeito, seu complemento foi adicionado! Nossa equipe analisará tudo e entrará em contato em breve. Muito obrigado novamente!"
+        return jsonify({'text': final_message, 'step': 'finished', 'answers': answers})
+
+    return jsonify({'text': "Ocorreu um erro no fluxo do chat. Reiniciando...", 'step': 0, 'answers': {}})
+
+
+# --- CHAT INTERNO (sem alteração) ---
 @app.route('/api/project_chat/<int:project_id>', methods=['POST'])
 @login_required
 def project_chat_api(project_id):
