@@ -2,9 +2,12 @@ services:
   web:
     build: .
     ports:
-      - "0.0.0.0:5001:8000" # A aplicação só será acessível pela própria máquina
+      - "5001:8000"
     env_file:
       - .env
+    extra_hosts:
+      # Permite que o container acesse serviços no host usando 'host.docker.internal'
+      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy

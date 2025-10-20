@@ -5,5 +5,8 @@
 __pycache__/
 *.pyc
 
+# Pasta de leads
+leads/
+
 # Outros
 .DS_Store

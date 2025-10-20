@@ -1,20 +1,26 @@
 import os
-import openai
+import requests
+import json
+from datetime import datetime
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 
 # --- CONFIGURAÇÃO INICIAL ---
 app = Flask(__name__)
-# Lê a chave secreta do ambiente
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 app.config['UPLOAD_FOLDER'] = 'project_briefings'
+app.config['LEADS_FOLDER'] = 'leads' # Pasta para salvar os leads
+
+# Cria a pasta de leads se não existir
+if not os.path.exists(app.config['LEADS_FOLDER']):
+    os.makedirs(app.config['LEADS_FOLDER'])
 
 # Lê as credenciais do banco de dados das variáveis de ambiente
 db_user = os.getenv('POSTGRES_USER')
 db_password = os.getenv('POSTGRES_PASSWORD')
 db_name = os.getenv('POSTGRES_DB')
-db_host = 'db' # Nome do serviço no docker-compose.yml
+db_host = 'db'
 
 database_uri = f'postgresql://{db_user}:{db_password}@{db_host}:5432/{db_name}'
 app.config['SQLALCHEMY_DATABASE_URI'] = database_uri
@@ -24,9 +30,6 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'auth'
-
-# Configuração da API da OpenAI
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # --- MODELOS DO BANCO DE DADOS ---
 class User(UserMixin, db.Model):
@@ -51,14 +54,7 @@ class ChatMessage(db.Model):
 
 @login_manager.user_loader
 def load_user(user_id):
-    # --- DEBUG ---
-    print(f"--- DEBUG: Tentando carregar o utilizador com ID: {user_id}")
-    user = User.query.get(int(user_id))
-    if user:
-        print(f"--- DEBUG: Utilizador {user.username} encontrado na base de dados.")
-    else:
-        print("--- DEBUG: Utilizador NÃO foi encontrado na base de dados.")
-    return user
+    return User.query.get(int(user_id))
 
 # --- ROTAS PRINCIPAIS E DE AUTENTICAÇÃO ---
 @app.route('/')
@@ -81,13 +77,7 @@ def auth():
             new_user = User(username=username, password=password)
             db.session.add(new_user)
             db.session.commit()
-            # --- DEBUG ---
-            print(f"--- DEBUG: Novo utilizador '{new_user.username}' criado com ID: {new_user.id}")
-            
             login_user(new_user)
-            # --- DEBUG ---
-            print(f"--- DEBUG: Função login_user chamada para '{new_user.username}'. Redirecionando para o dashboard.")
-            
             return redirect(url_for('dashboard'))
 
         elif 'login' in request.form:
@@ -96,12 +86,8 @@ def auth():
             user = User.query.filter_by(username=username).first()
             if user and user.password == password:
                 login_user(user)
-                # --- DEBUG ---
-                print(f"--- DEBUG: Utilizador '{user.username}' logado com sucesso. Redirecionando para o dashboard.")
                 return redirect(url_for('dashboard'))
             
-            # --- DEBUG ---
-            print(f"--- DEBUG: Tentativa de login falhou para o utilizador '{username}'.")
             flash('Credenciais inválidas.', 'error')
             return redirect(url_for('auth'))
 
@@ -125,8 +111,6 @@ def privacy():
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    # --- DEBUG ---
-    print(f"--- DEBUG: A aceder ao dashboard. Estado de autenticação: {current_user.is_authenticated}")
     project_in_analysis = Project.query.filter_by(owner=current_user, status='analyzing').first()
     user_projects = Project.query.filter_by(owner=current_user).order_by(Project.id.desc()).all()
     return render_template('dashboard.html', 
@@ -134,8 +118,6 @@ def dashboard():
                            projects=user_projects,
                            project_in_analysis=bool(project_in_analysis))
 
-# ... (o resto das suas rotas continua igual) ...
-# --- ROTAS DO DASHBOARD E PROJETOS ---
 @app.route('/project/new', methods=['POST'])
 @login_required
 def new_project():
@@ -159,37 +141,87 @@ def project_chat(project_id):
 
 # --- ROTAS DA API DE CHAT ---
 
-# 1) Chat Externo (Não Logado)
+# 1) Chat Externo (Não Logado) com Llama3
 @app.route('/api/external_chat', methods=['POST'])
 def external_chat():
     data = request.get_json()
-    user_message = data.get('message', '').lower()
-    message_count = data.get('count', 0)
+    user_message = data.get('message', '')
+    conversation_history = data.get('history', [])
+    
+    # Adiciona a mensagem atual ao histórico
+    conversation_history.append({"role": "user", "content": user_message})
 
-    if message_count == 0:
-        response_text = "Olá! Que ótima ideia você tem em mente. Me conte um pouco sobre ela."
-    elif message_count == 1:
-        # Lógica de análise de palavras-chave
-        tech_keywords = {
-            "bubble": ["app sem código", "bubble.io", "aplicativo rápido"],
-            "n8n": ["automação", "integrar sistemas", "n8n", "workflow"],
-            "appsheet": ["aplicativo para empresa", "appsheet", "planilhas"],
-            "web": ["site", "sistema web", "loja online", "python", "javascript"]
+    # Carrega o prompt do sistema para o chatbot de leads
+    try:
+        with open('prompt.txt', 'r', encoding='utf-8') as f:
+            system_prompt = f.read().split('---')[0] # Usa apenas a primeira parte do prompt
+    except FileNotFoundError:
+        return jsonify({"error": "Arquivo de prompt não encontrado."}), 500
+        
+    # Prepara a conversa para a API do Ollama
+    messages_for_api = [{"role": "system", "content": system_prompt}] + conversation_history
+
+    try:
+        # URL da sua API Ollama local
+        # 'host.docker.internal' permite que o container acesse a máquina host
+        ollama_url = "http://host.docker.internal:11434/api/chat" 
+        
+        payload = {
+            "model": "llama3:8b",
+            "messages": messages_for_api,
+            "stream": False
         }
-        
-        found_tech = "web" # Padrão
-        for tech, keywords in tech_keywords.items():
-            if any(keyword in user_message for keyword in keywords):
-                found_tech = tech
-                break
-        
-        response_text = f"Interessante! Parece que seu projeto envolve {found_tech}. Acreditamos que temos as ferramentas certas para te ajudar! Para darmos o próximo passo e detalhar sua ideia com um especialista, por favor, crie uma conta. A partir da sua área de cliente, você poderá iniciar formalmente o seu projeto."
-    else:
-        response_text = "" # Não responde mais
 
-    return jsonify({'text': response_text, 'disable_chat': message_count >= 1})
+        response = requests.post(ollama_url, json=payload)
+        response.raise_for_status() # Lança um erro se a resposta não for 2xx
+        
+        response_data = response.json()
+        ai_message = response_data['message']['content']
+        
+        # Adiciona a resposta da IA ao histórico para o próximo turno
+        conversation_history.append({"role": "assistant", "content": ai_message})
 
-# 2) Chat Interno (Dashboard)
+        # --- LÓGICA PARA SALVAR O LEAD ---
+        # Analisa a resposta da IA para ver se a coleta de dados terminou
+        if "##LEAD_CAPTURED##" in ai_message:
+            ai_message = ai_message.replace("##LEAD_CAPTURED##", "").strip()
+            
+            # Extrai nome e contato da conversa
+            user_name = "Não fornecido"
+            user_contact = "Não fornecido"
+
+            # Lógica simples para extrair dados (pode ser melhorada)
+            for msg in conversation_history:
+                if msg['role'] == 'user':
+                    # Heurística para encontrar nome e contato nas primeiras mensagens
+                    if "meu nome é" in msg['content'].lower():
+                         user_name = msg['content'].split("é")[-1].strip()
+                    if "@" in msg['content'] or any(char.isdigit() for char in msg['content']):
+                        user_contact = msg['content'].strip()
+            
+            # Cria o conteúdo do arquivo
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            filename = f"lead_{timestamp}.txt"
+            filepath = os.path.join(app.config['LEADS_FOLDER'], filename)
+            
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(f"Nome: {user_name}\n")
+                f.write(f"Contato: {user_contact}\n")
+                f.write("\n--- Histórico da Conversa ---\n\n")
+                for msg in conversation_history:
+                    f.write(f"{msg['role'].capitalize()}: {msg['content']}\n\n")
+
+        return jsonify({'text': ai_message, 'history': conversation_history})
+
+    except requests.exceptions.RequestException as e:
+        # Erro de conexão com o Ollama
+        error_message = f"Desculpe, não consegui me conectar ao meu cérebro (Ollama). Verifique se ele está rodando. Erro: {e}"
+        return jsonify({'text': error_message, 'history': conversation_history}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# 2) Chat Interno (Dashboard) - MANTIDO COM OPENAI (ou pode mudar se quiser)
 @app.route('/api/project_chat/<int:project_id>', methods=['POST'])
 @login_required
 def project_chat_api(project_id):
@@ -201,13 +233,10 @@ def project_chat_api(project_id):
     if not user_message:
         return jsonify({"error": "Mensagem vazia"}), 400
 
-    # Salva a mensagem do usuário no DB
     db.session.add(ChatMessage(role='user', content=user_message, project=project))
     
-    # Monta o histórico para a IA
     chat_history = [{"role": msg.role, "content": msg.content} for msg in project.chat_messages]
     
-    # 4) Carrega o prompt do arquivo
     try:
         with open('prompt.txt', 'r', encoding='utf-8') as f:
             system_prompt = f.read()
@@ -215,6 +244,9 @@ def project_chat_api(project_id):
         return jsonify({"error": "Arquivo de prompt não encontrado."}), 500
 
     try:
+        # Este endpoint ainda usa a OpenAI, conforme o código original.
+        # Mude a URL e o payload se quiser usar Ollama aqui também.
+        openai.api_key = os.getenv("OPENAI_API_KEY")
         response = openai.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -224,7 +256,6 @@ def project_chat_api(project_id):
         )
         ai_message = response.choices[0].message.content
         
-        # Salva a resposta da IA no DB
         db.session.add(ChatMessage(role='assistant', content=ai_message, project=project))
         db.session.commit()
         
@@ -232,26 +263,27 @@ def project_chat_api(project_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# 5) Finalização do Projeto e Geração do 5W2H
+
+# 5) Finalização do Projeto
 @app.route('/project/finalize/<int:project_id>', methods=['POST'])
 @login_required
 def finalize_project(project_id):
+    # ... (código original mantido)
     project = Project.query.get_or_404(project_id)
     if project.owner != current_user:
         return "Não autorizado", 403
 
-    # Carrega o prompt e o histórico
     with open('prompt.txt', 'r', encoding='utf-8') as f:
         system_prompt = f.read()
     chat_history = [{"role": msg.role, "content": msg.content} for msg in project.chat_messages]
     
-    # Adiciona a instrução final para gerar o 5W2H
     final_instruction = {
         "role": "user",
         "content": "Com base em toda a nossa conversa, por favor, gere o briefing completo do projeto seguindo estritamente a estrutura 5W2H definida nas suas instruções iniciais."
     }
     
     try:
+        openai.api_key = os.getenv("OPENAI_API_KEY")
         response = openai.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -262,7 +294,6 @@ def finalize_project(project_id):
         )
         summary = response.choices[0].message.content
         
-        # Salva o arquivo .txt
         if not os.path.exists(app.config['UPLOAD_FOLDER']):
             os.makedirs(app.config['UPLOAD_FOLDER'])
             
@@ -272,15 +303,14 @@ def finalize_project(project_id):
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(summary)
             
-        # Atualiza o projeto no banco de dados
         project.status = 'analyzing'
         project.summary_file_path = filepath
         db.session.commit()
         
         return redirect(url_for('dashboard'))
     except Exception as e:
-        # Adicione um tratamento de erro aqui
         return f"Ocorreu um erro ao finalizar o projeto: {str(e)}", 500
+
 
 # Cria as tabelas no contexto da aplicação
 with app.app_context():
