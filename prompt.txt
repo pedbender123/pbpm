@@ -36,6 +36,6 @@ Ao final da conversa, você deverá ser capaz de gerar um resumo com a seguinte 
 * **Recursos Disponíveis:** O cliente já possui identidade visual, servidor, ou algum outro recurso?
 
 **7. How Much? (Quanto?)**
-* **Orçamento:** O cliente tem uma faixa de orçamento em mente para o desenvolvimento? (Seja sensível ao perguntar isso).
+* **Orçamento:** O cliente tem uma faixa de orçamento em mente para o desenvolvimento? (Seja sensível ao perguntar isso)
 
 ---
