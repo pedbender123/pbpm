@@ -22,12 +22,20 @@ jobs:
       run: |
         ssh-keyscan -H ${{ secrets.VPS_SSH_HOST }} >> ~/.ssh/known_hosts
         ssh ${{ secrets.VPS_SSH_USERNAME }}@${{ secrets.VPS_SSH_HOST }} << 'EOF'
+          # Navega para a pasta do projeto
           cd ~/pbpm || git clone https://github.com/${{ github.repository }}.git ~/pbpm
           cd ~/pbpm
           git pull
+          
+          # Cria o arquivo .env
           echo "${{ secrets.DOT_ENV }}" > .env
           
-          # Comando correto: Para, recria e sobe os containers com as novas configurações.
-          docker compose up --build --force-recreate -d
-
+          # Sobe todos os serviços (web, db, ollama)
+          docker compose up --build -d --remove-orphans
+          
+          # Comando para baixar o modelo Llama3 DENTRO do container do Ollama.
+          # O '|| true' no final evita que o deploy falhe se o modelo já existir.
+          echo "Baixando/Verificando modelo Llama3..."
+          docker exec pbpm-ollama-1 ollama pull llama3:8b || true
+          echo "Deploy finalizado!"
         EOF

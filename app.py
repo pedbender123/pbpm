@@ -14,11 +14,11 @@ app.config['LEADS_FOLDER'] = 'leads'
 if not os.path.exists(app.config['LEADS_FOLDER']):
     os.makedirs(app.config['LEADS_FOLDER'])
 
-# Conecta ao container do DB pelo nome do serviço
+# Conecta aos outros containers usando os nomes dos serviços
 db_user = os.getenv('POSTGRES_USER')
 db_password = os.getenv('POSTGRES_PASSWORD')
 db_name = os.getenv('POSTGRES_DB')
-db_host = 'db' 
+db_host = 'db' # Nome do serviço do banco de dados
 
 database_uri = f'postgresql://{db_user}:{db_password}@{db_host}:5432/{db_name}'
 app.config['SQLALCHEMY_DATABASE_URI'] = database_uri
@@ -28,7 +28,7 @@ db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'auth'
 
-# --- MODELOS DO BANCO DE DADOS (sem alteração) ---
+# --- MODELOS (sem alteração) ---
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(150), unique=True, nullable=False)
@@ -60,8 +60,7 @@ def index():
 
 @app.route('/auth', methods=['GET', 'POST'])
 def auth():
-    if current_user.is_authenticated:
-        return redirect(url_for('dashboard'))
+    if current_user.is_authenticated: return redirect(url_for('dashboard'))
     if request.method == 'POST':
         if 'register' in request.form:
             username = request.form['username']
@@ -75,14 +74,12 @@ def auth():
             login_user(new_user)
             return redirect(url_for('dashboard'))
         elif 'login' in request.form:
-            username = request.form['username']
-            password = request.form['password']
+            username, password = request.form['username'], request.form['password']
             user = User.query.filter_by(username=username).first()
             if user and user.password == password:
                 login_user(user)
                 return redirect(url_for('dashboard'))
             flash('Credenciais inválidas.', 'error')
-            return redirect(url_for('auth'))
     return render_template('auth.html')
 
 @app.route('/logout')
@@ -92,29 +89,23 @@ def logout():
     return redirect(url_for('index'))
 
 @app.route('/terms')
-def terms():
-    return render_template('terms.html')
+def terms(): return render_template('terms.html')
 
 @app.route('/privacy')
-def privacy():
-    return render_template('privacy.html')
+def privacy(): return render_template('privacy.html')
 
 @app.route('/dashboard')
 @login_required
 def dashboard():
     project_in_analysis = Project.query.filter_by(owner=current_user, status='analyzing').first()
     user_projects = Project.query.filter_by(owner=current_user).order_by(Project.id.desc()).all()
-    return render_template('dashboard.html', 
-                           username=current_user.username,
-                           projects=user_projects,
-                           project_in_analysis=bool(project_in_analysis))
+    return render_template('dashboard.html', username=current_user.username, projects=user_projects, project_in_analysis=bool(project_in_analysis))
 
 @app.route('/project/new', methods=['POST'])
 @login_required
 def new_project():
     project_name = request.form.get('project_name')
-    if not project_name:
-        return "Nome do projeto é obrigatório", 400
+    if not project_name: return "Nome do projeto é obrigatório", 400
     new_proj = Project(name=project_name, owner=current_user)
     db.session.add(new_proj)
     db.session.commit()
@@ -124,41 +115,31 @@ def new_project():
 @login_required
 def project_chat(project_id):
     project = Project.query.get_or_404(project_id)
-    if project.owner != current_user:
-        return "Acesso não autorizado", 403
+    if project.owner != current_user: return "Acesso não autorizado", 403
     return render_template('project_chat.html', project=project)
 
-# --- ROTA DO CHAT EXTERNO (com a URL do Ollama corrigida) ---
+# --- ROTA DO CHAT EXTERNO ---
 @app.route('/api/external_chat', methods=['POST'])
 def external_chat():
     data = request.get_json()
     user_message = data.get('message', '')
     conversation_history = data.get('history', [])
-    
     conversation_history.append({"role": "user", "content": user_message})
-
     try:
         with open('prompt.txt', 'r', encoding='utf-8') as f:
             system_prompt = f.read().split('---')[0].strip()
-    except FileNotFoundError:
-        return jsonify({"error": "Arquivo de prompt não encontrado."}), 500
-        
+    except FileNotFoundError: return jsonify({"error": "Arquivo de prompt não encontrado."}), 500
     messages_for_api = [{"role": "system", "content": system_prompt}] + conversation_history
-
     try:
         # **A MUDANÇA ESTÁ AQUI**
-        # Usa o endereço especial para se comunicar com a VPS
-        ollama_url = "http://host.docker.internal:11434/api/chat"
+        # Conecta ao container do Ollama pelo nome do serviço
+        ollama_url = "http://ollama:11434/api/chat"
         payload = {"model": "llama3:8b", "messages": messages_for_api, "stream": False}
-
-        response = requests.post(ollama_url, json=payload, timeout=25)
+        response = requests.post(ollama_url, json=payload, timeout=30)
         response.raise_for_status()
-        
         response_data = response.json()
         ai_message = response_data['message']['content']
-        
         conversation_history.append({"role": "assistant", "content": ai_message})
-
         if "##LEAD_CAPTURED##" in ai_message:
             ai_message = ai_message.replace("##LEAD_CAPTURED##", "").strip()
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -168,19 +149,12 @@ def external_chat():
                 f.write("--- Lead Capturado ---\n\n")
                 for msg in conversation_history:
                     f.write(f"[{msg['role'].capitalize()}]: {msg['content']}\n\n")
-
         return jsonify({'text': ai_message, 'history': conversation_history})
-
-    except requests.exceptions.Timeout:
-        error_message = "A resposta do assistente demorou muito. Tente novamente."
-        return jsonify({'text': error_message, 'history': conversation_history}), 504
     except requests.exceptions.RequestException as e:
-        error_message = f"Não consegui me conectar ao assistente. (Erro: {e})"
-        return jsonify({'text': error_message, 'history': conversation_history}), 500
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'text': f"Não consegui me conectar ao assistente. O serviço pode estar iniciando. Tente de novo em instantes. (Erro: {e})", 'history': conversation_history}), 500
+    except Exception as e: return jsonify({'error': str(e)}), 500
 
-# --- CHAT INTERNO E FINALIZE PROJECT (sem alteração) ---
+# --- CHAT INTERNO E FINALIZE (sem alteração) ---
 @app.route('/api/project_chat/<int:project_id>', methods=['POST'])
 @login_required
 def project_chat_api(project_id):

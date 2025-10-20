@@ -2,15 +2,17 @@ services:
   web:
     build: .
     ports:
-      - "5001:8000" # CORRIGIDO: Voltamos para a porta 5001
+      - "5001:8000" # Voltamos para a porta 5001, como o Nginx espera
     env_file:
       - .env
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy
+      ollama:
+        condition: service_started
     restart: unless-stopped
+    networks:
+      - pbpm_network
 
   db:
     image: postgres:13
@@ -24,6 +26,21 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    networks:
+      - pbpm_network
+
+  ollama:
+    image: ollama/ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    networks:
+      - pbpm_network
 
 volumes:
   postgres_data:
+  ollama_data:
+
+networks:
+  pbpm_network:
+    driver: bridge
