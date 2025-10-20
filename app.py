@@ -14,10 +14,12 @@ app.config['LEADS_FOLDER'] = 'leads'
 if not os.path.exists(app.config['LEADS_FOLDER']):
     os.makedirs(app.config['LEADS_FOLDER'])
 
+# --- MUDANÇAS AQUI ---
+# Conecta aos outros containers usando os nomes dos serviços
 db_user = os.getenv('POSTGRES_USER')
 db_password = os.getenv('POSTGRES_PASSWORD')
 db_name = os.getenv('POSTGRES_DB')
-db_host = 'localhost' # MUDANÇA AQUI
+db_host = 'db' # Nome do serviço do banco de dados no docker-compose
 
 database_uri = f'postgresql://{db_user}:{db_password}@{db_host}:5432/{db_name}'
 app.config['SQLALCHEMY_DATABASE_URI'] = database_uri
@@ -55,7 +57,6 @@ def load_user(user_id):
 @app.route('/')
 def index():
     return render_template('index.html')
-
 # ... (outras rotas como auth, logout, etc., permanecem iguais) ...
 @app.route('/auth', methods=['GET', 'POST'])
 def auth():
@@ -97,7 +98,6 @@ def terms():
 @app.route('/privacy')
 def privacy():
     return render_template('privacy.html')
-
 @app.route('/dashboard')
 @login_required
 def dashboard():
@@ -146,7 +146,9 @@ def external_chat():
     messages_for_api = [{"role": "system", "content": system_prompt}] + conversation_history
 
     try:
-        ollama_url = "http://localhost:11434/api/chat" # MUDANÇA AQUI
+        # --- MUDANÇA AQUI ---
+        # Conecta ao container do Ollama pelo nome do serviço
+        ollama_url = "http://ollama:11434/api/chat"
         payload = {"model": "llama3:8b", "messages": messages_for_api, "stream": False}
 
         response = requests.post(ollama_url, json=payload, timeout=20)
@@ -175,11 +177,10 @@ def external_chat():
         error_message = "A resposta do assistente demorou muito para chegar. Tente novamente."
         return jsonify({'text': error_message, 'history': conversation_history}), 504
     except requests.exceptions.RequestException as e:
-        error_message = f"Não consegui me conectar ao assistente (Ollama). Verifique se ele está rodando localmente. (Erro: {e})"
+        error_message = f"Não consegui me conectar ao assistente. (Erro: {e})"
         return jsonify({'text': error_message, 'history': conversation_history}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
 # ... (O resto do seu código, como o chat interno e a finalização de projeto, permanece igual) ...
 @app.route('/api/project_chat/<int:project_id>', methods=['POST'])
 @login_required
@@ -213,7 +214,6 @@ def project_chat_api(project_id):
         return jsonify({'text': ai_message})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-        
 @app.route('/project/finalize/<int:project_id>', methods=['POST'])
 @login_required
 def finalize_project(project_id):

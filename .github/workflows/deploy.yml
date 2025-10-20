@@ -3,7 +3,7 @@ name: Deploy to Hostinger VPS
 on:
   push:
     branches:
-      - main # Dispara a ação em pushes para a branch 'main'
+      - main
 
 jobs:
   deploy:
@@ -20,23 +20,19 @@ jobs:
 
     - name: Deploy na VPS
       run: |
-        # Adiciona o IP da VPS aos hosts conhecidos para evitar prompts interativos
         ssh-keyscan -H ${{ secrets.VPS_SSH_HOST }} >> ~/.ssh/known_hosts
-
-        # Comando SSH para executar o deploy
         ssh ${{ secrets.VPS_SSH_USERNAME }}@${{ secrets.VPS_SSH_HOST }} << 'EOF'
-          # Navega para o diretório do projeto (ou clona se não existir)
           cd ~/pbpm || git clone https://github.com/${{ github.repository }}.git ~/pbpm
-
-          # Entra na pasta e atualiza o código
           cd ~/pbpm
           git pull
-          
-          # Cria o arquivo .env a partir do secret do GitHub
           echo "${{ secrets.DOT_ENV }}" > .env
+          
+          # Comando crucial: para, recria e sobe os containers.
+          # Isso aplica as mudanças do docker-compose.yml
+          docker compose up --build --force-recreate -d
 
-          # Usa Docker Compose para construir e rodar os containers em modo detached (-d)
-          # --build força a reconstrução das imagens se o Dockerfile mudou
-          docker compose up --build -d
+          # Adicionado: Comando para baixar o modelo llama3 no container do ollama
+          # O '|| true' no final evita que o deploy falhe se o modelo já existir
+          docker exec $(docker ps -q --filter "name=ollama") ollama pull llama3:8b || true
 
         EOF
