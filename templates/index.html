@@ -156,10 +156,22 @@
 
     <footer class="bg-gray-100 dark:bg-gray-950 border-t border-gray-200 dark:border-gray-800">
         <div class="container mx-auto px-6 py-8 text-center text-gray-600 dark:text-gray-400">
+            <div class="flex justify-center gap-4 mb-4">
+                <a href="{{ url_for('terms') }}" class="hover:underline">Termos de Serviço</a>
+                <a href="{{ url_for('privacy') }}" class="hover:underline">Política de Privacidade</a>
+            </div>
             <p>&copy; 2024 PBPM. Todos os direitos reservados.</p>
             <p>Construindo o futuro, um sistema de cada vez.</p>
         </div>
     </footer>
+
+    <div id="cookie-banner" class="hidden fixed bottom-0 left-0 right-0 bg-gray-800 dark:bg-gray-950 text-white p-4 shadow-lg z-50 flex items-center justify-between flex-wrap gap-4">
+        <p class="text-sm">Utilizamos cookies para melhorar a sua experiência no nosso site. Ao continuar a navegar, você concorda com a nossa <a href="{{ url_for('privacy') }}" class="font-bold hover:underline">Política de Privacidade</a>.</p>
+        <button id="accept-cookies-btn" class="bg-purple-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors">
+            Aceitar
+        </button>
+    </div>
+
     <script src="{{ url_for('static', filename='js/script.js') }}" defer></script>
 </body>
 </html>

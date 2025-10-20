@@ -113,6 +113,14 @@ def logout():
     logout_user()
     return redirect(url_for('index'))
 
+@app.route('/terms')
+def terms():
+    return render_template('terms.html')
+
+@app.route('/privacy')
+def privacy():
+    return render_template('privacy.html')
+
 # --- ROTAS DO DASHBOARD E PROJETOS ---
 @app.route('/dashboard')
 @login_required

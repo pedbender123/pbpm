@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Termos de Serviço - PBPM</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="bg-gray-50 dark:bg-gray-900">
+    <header class="bg-white dark:bg-gray-950 shadow-sm">
+        <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <a href="{{ url_for('index') }}" class="text-xl font-bold text-gray-900 dark:text-white">PBPM</a>
+            <a href="{{ url_for('index') }}" class="text-purple-600 dark:text-purple-400 hover:underline">Voltar à página inicial</a>
+        </div>
+    </header>
+    <main class="container mx-auto px-6 py-12">
+        <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-6">Termos de Serviço</h1>
+        <div class="prose dark:prose-invert max-w-none text-gray-700 dark:text-gray-300 space-y-4">
+            <p><strong>Última atualização:</strong> 20 de outubro de 2025</p>
+            <p>Bem-vindo à PBPM. Ao utilizar nossos serviços, você concorda com estes termos. Leia-os com atenção.</p>
+            
+            <h2 class="text-2xl font-semibold">1. Uso dos Nossos Serviços</h2>
+            <p>Você deve seguir todas as políticas disponibilizadas a você dentro dos Serviços. Não faça uso indevido de nossos Serviços. Por exemplo, não interfira com nossos Serviços nem tente acessá-los por um método diferente da interface e das instruções que fornecemos.</p>
+
+            <h2 class="text-2xl font-semibold">2. Sua Conta</h2>
+            <p>Para utilizar alguns de nossos serviços, você precisará de uma Conta. Você mesmo pode criar sua Conta, e será responsável pela atividade que ocorre nela ou através dela.</p>
+
+            <h2 class="text-2xl font-semibold">3. Privacidade e Proteção de Dados</h2>
+            <p>Nossas políticas de privacidade explicam como tratamos seus dados pessoais e protegemos sua privacidade quando você usa nossos Serviços. Ao usar nossos Serviços, você concorda que a PBPM pode usar esses dados de acordo com nossas políticas de privacidade.</p>
+            
+            <h2 class="text-2xl font-semibold">4. Modificações nos Serviços</h2>
+            <p>Estamos constantemente alterando e melhorando nossos Serviços. Podemos adicionar ou remover funcionalidades ou recursos, e podemos suspender ou encerrar um Serviço por completo.</p>
+        </div>
+    </main>
+</body>
+</html>
