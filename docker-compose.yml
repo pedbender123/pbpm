@@ -2,7 +2,7 @@ services:
   web:
     build: .
     ports:
-      - "8001:8000" # MUDANÇA AQUI: O site ficará acessível na porta 8001 da VPS
+      - "5001:8000" # CORRIGIDO: Voltamos para a porta 5001
     env_file:
       - .env
     extra_hosts:
