@@ -27,12 +27,7 @@ jobs:
           git pull
           echo "${{ secrets.DOT_ENV }}" > .env
           
-          # Comando crucial: para, recria e sobe os containers.
-          # Isso aplica as mudanças do docker-compose.yml
+          # Comando correto: Para, recria e sobe os containers com as novas configurações.
           docker compose up --build --force-recreate -d
-
-          # Adicionado: Comando para baixar o modelo llama3 no container do ollama
-          # O '|| true' no final evita que o deploy falhe se o modelo já existir
-          docker exec $(docker ps -q --filter "name=ollama") ollama pull llama3:8b || true
 
         EOF

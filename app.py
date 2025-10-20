@@ -14,12 +14,11 @@ app.config['LEADS_FOLDER'] = 'leads'
 if not os.path.exists(app.config['LEADS_FOLDER']):
     os.makedirs(app.config['LEADS_FOLDER'])
 
-# --- MUDANÇAS AQUI ---
-# Conecta aos outros containers usando os nomes dos serviços
+# Conecta ao container do DB pelo nome do serviço
 db_user = os.getenv('POSTGRES_USER')
 db_password = os.getenv('POSTGRES_PASSWORD')
 db_name = os.getenv('POSTGRES_DB')
-db_host = 'db' # Nome do serviço do banco de dados no docker-compose
+db_host = 'db' 
 
 database_uri = f'postgresql://{db_user}:{db_password}@{db_host}:5432/{db_name}'
 app.config['SQLALCHEMY_DATABASE_URI'] = database_uri
@@ -29,7 +28,7 @@ db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'auth'
 
-# ... (O resto do seu código, como os Modelos do DB, permanece igual) ...
+# --- MODELOS DO BANCO DE DADOS (sem alteração) ---
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(150), unique=True, nullable=False)
@@ -54,10 +53,11 @@ class ChatMessage(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+# --- ROTAS PRINCIPAIS (sem alteração) ---
 @app.route('/')
 def index():
     return render_template('index.html')
-# ... (outras rotas como auth, logout, etc., permanecem iguais) ...
+
 @app.route('/auth', methods=['GET', 'POST'])
 def auth():
     if current_user.is_authenticated:
@@ -98,6 +98,7 @@ def terms():
 @app.route('/privacy')
 def privacy():
     return render_template('privacy.html')
+
 @app.route('/dashboard')
 @login_required
 def dashboard():
@@ -127,8 +128,7 @@ def project_chat(project_id):
         return "Acesso não autorizado", 403
     return render_template('project_chat.html', project=project)
 
-
-# --- ROTA DO CHAT EXTERNO CORRIGIDA ---
+# --- ROTA DO CHAT EXTERNO (com a URL do Ollama corrigida) ---
 @app.route('/api/external_chat', methods=['POST'])
 def external_chat():
     data = request.get_json()
@@ -146,12 +146,12 @@ def external_chat():
     messages_for_api = [{"role": "system", "content": system_prompt}] + conversation_history
 
     try:
-        # --- MUDANÇA AQUI ---
-        # Conecta ao container do Ollama pelo nome do serviço
-        ollama_url = "http://ollama:11434/api/chat"
+        # **A MUDANÇA ESTÁ AQUI**
+        # Usa o endereço especial para se comunicar com a VPS
+        ollama_url = "http://host.docker.internal:11434/api/chat"
         payload = {"model": "llama3:8b", "messages": messages_for_api, "stream": False}
 
-        response = requests.post(ollama_url, json=payload, timeout=20)
+        response = requests.post(ollama_url, json=payload, timeout=25)
         response.raise_for_status()
         
         response_data = response.json()
@@ -161,11 +161,9 @@ def external_chat():
 
         if "##LEAD_CAPTURED##" in ai_message:
             ai_message = ai_message.replace("##LEAD_CAPTURED##", "").strip()
-            
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"lead_{timestamp}.txt"
             filepath = os.path.join(app.config['LEADS_FOLDER'], filename)
-            
             with open(filepath, 'w', encoding='utf-8') as f:
                 f.write("--- Lead Capturado ---\n\n")
                 for msg in conversation_history:
@@ -174,83 +172,59 @@ def external_chat():
         return jsonify({'text': ai_message, 'history': conversation_history})
 
     except requests.exceptions.Timeout:
-        error_message = "A resposta do assistente demorou muito para chegar. Tente novamente."
+        error_message = "A resposta do assistente demorou muito. Tente novamente."
         return jsonify({'text': error_message, 'history': conversation_history}), 504
     except requests.exceptions.RequestException as e:
         error_message = f"Não consegui me conectar ao assistente. (Erro: {e})"
         return jsonify({'text': error_message, 'history': conversation_history}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-# ... (O resto do seu código, como o chat interno e a finalização de projeto, permanece igual) ...
+
+# --- CHAT INTERNO E FINALIZE PROJECT (sem alteração) ---
 @app.route('/api/project_chat/<int:project_id>', methods=['POST'])
 @login_required
 def project_chat_api(project_id):
     project = Project.query.get_or_404(project_id)
-    if project.owner != current_user:
-        return jsonify({"error": "Não autorizado"}), 403
+    if project.owner != current_user: return jsonify({"error": "Não autorizado"}), 403
     user_message = request.json.get('message')
-    if not user_message:
-        return jsonify({"error": "Mensagem vazia"}), 400
+    if not user_message: return jsonify({"error": "Mensagem vazia"}), 400
     db.session.add(ChatMessage(role='user', content=user_message, project=project))
     chat_history = [{"role": msg.role, "content": msg.content} for msg in project.chat_messages]
     try:
-        with open('prompt.txt', 'r', encoding='utf-8') as f:
-            system_prompt = f.read()
-    except FileNotFoundError:
-        return jsonify({"error": "Arquivo de prompt não encontrado."}), 500
+        with open('prompt.txt', 'r', encoding='utf-8') as f: system_prompt = f.read()
+    except FileNotFoundError: return jsonify({"error": "Arquivo de prompt não encontrado."}), 500
     try:
         import openai
         openai.api_key = os.getenv("OPENAI_API_KEY")
-        response = openai.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                *chat_history
-            ]
-        )
+        response = openai.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "system", "content": system_prompt}, *chat_history])
         ai_message = response.choices[0].message.content
         db.session.add(ChatMessage(role='assistant', content=ai_message, project=project))
         db.session.commit()
         return jsonify({'text': ai_message})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception as e: return jsonify({'error': str(e)}), 500
+
 @app.route('/project/finalize/<int:project_id>', methods=['POST'])
 @login_required
 def finalize_project(project_id):
     project = Project.query.get_or_404(project_id)
-    if project.owner != current_user:
-        return "Não autorizado", 403
-    with open('prompt.txt', 'r', encoding='utf-8') as f:
-        system_prompt = f.read()
+    if project.owner != current_user: return "Não autorizado", 403
+    with open('prompt.txt', 'r', encoding='utf-8') as f: system_prompt = f.read()
     chat_history = [{"role": msg.role, "content": msg.content} for msg in project.chat_messages]
-    final_instruction = {
-        "role": "user",
-        "content": "Com base em toda a nossa conversa, por favor, gere o briefing completo do projeto seguindo estritamente a estrutura 5W2H definida nas suas instruções iniciais."
-    }
+    final_instruction = {"role": "user", "content": "Com base em toda a nossa conversa, por favor, gere o briefing completo do projeto seguindo estritamente a estrutura 5W2H definida nas suas instruções iniciais."}
     try:
         import openai
         openai.api_key = os.getenv("OPENAI_API_KEY")
-        response = openai.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                *chat_history,
-                final_instruction
-            ]
-        )
+        response = openai.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "system", "content": system_prompt}, *chat_history, final_instruction])
         summary = response.choices[0].message.content
-        if not os.path.exists(app.config['UPLOAD_FOLDER']):
-            os.makedirs(app.config['UPLOAD_FOLDER'])
+        if not os.path.exists(app.config['UPLOAD_FOLDER']): os.makedirs(app.config['UPLOAD_FOLDER'])
         filename = f"projeto_{project.id}_{current_user.username}.txt"
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(summary)
+        with open(filepath, 'w', encoding='utf-8') as f: f.write(summary)
         project.status = 'analyzing'
         project.summary_file_path = filepath
         db.session.commit()
         return redirect(url_for('dashboard'))
-    except Exception as e:
-        return f"Ocorreu um erro ao finalizar o projeto: {str(e)}", 500
+    except Exception as e: return f"Ocorreu um erro ao finalizar o projeto: {str(e)}", 500
 
 with app.app_context():
     db.create_all()

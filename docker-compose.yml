@@ -2,17 +2,16 @@ services:
   web:
     build: .
     ports:
-      - "8000:8000" # Mapeia a porta 8000 do container para a porta 8000 da VPS
+      - "8000:8000" # Expõe a porta 8000 do container para a porta 8000 da VPS
     env_file:
       - .env
+    # Adiciona uma "ponte" de rede para o container enxergar o localhost da VPS
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy
-      ollama:
-        condition: service_started # Garante que o Ollama inicie antes
     restart: unless-stopped
-    networks:
-      - pbpm_network
 
   db:
     image: postgres:13
@@ -26,21 +25,6 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
-    networks:
-      - pbpm_network
-
-  ollama:
-    image: ollama/ollama
-    volumes:
-      - ollama_data:/root/.ollama
-    restart: unless-stopped
-    networks:
-      - pbpm_network
 
 volumes:
   postgres_data:
-  ollama_data:
-
-networks:
-  pbpm_network:
-    driver: bridge
