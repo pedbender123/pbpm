@@ -2,10 +2,9 @@ services:
   web:
     build: .
     ports:
-      - "8000:8000" # Expõe a porta 8000 do container para a porta 8000 da VPS
+      - "8001:8000" # MUDANÇA AQUI: O site ficará acessível na porta 8001 da VPS
     env_file:
       - .env
-    # Adiciona uma "ponte" de rede para o container enxergar o localhost da VPS
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
