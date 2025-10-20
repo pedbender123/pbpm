@@ -17,7 +17,8 @@ if not os.path.exists(app.config['LEADS_FOLDER']):
 db_user = os.getenv('POSTGRES_USER')
 db_password = os.getenv('POSTGRES_PASSWORD')
 db_name = os.getenv('POSTGRES_DB')
-db_host = 'db'
+db_host = 'localhost' # MUDANÇA AQUI
+
 database_uri = f'postgresql://{db_user}:{db_password}@{db_host}:5432/{db_name}'
 app.config['SQLALCHEMY_DATABASE_URI'] = database_uri
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -26,7 +27,7 @@ db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'auth'
 
-# --- MODELOS DO BANCO DE DADOS ---
+# ... (O resto do seu código, como os Modelos do DB, permanece igual) ...
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(150), unique=True, nullable=False)
@@ -51,12 +52,11 @@ class ChatMessage(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# --- ROTAS PRINCIPAIS E DE AUTENTICAÇÃO ---
 @app.route('/')
 def index():
     return render_template('index.html')
 
-# ... (outras rotas como auth, logout, terms, privacy, etc., permanecem iguais) ...
+# ... (outras rotas como auth, logout, etc., permanecem iguais) ...
 @app.route('/auth', methods=['GET', 'POST'])
 def auth():
     if current_user.is_authenticated:
@@ -98,7 +98,6 @@ def terms():
 def privacy():
     return render_template('privacy.html')
 
-# --- ROTAS DO DASHBOARD E PROJETOS ---
 @app.route('/dashboard')
 @login_required
 def dashboard():
@@ -128,8 +127,8 @@ def project_chat(project_id):
         return "Acesso não autorizado", 403
     return render_template('project_chat.html', project=project)
 
-# --- ROTAS DA API DE CHAT ---
-# 1) Chat Externo (Não Logado) com Llama3
+
+# --- ROTA DO CHAT EXTERNO CORRIGIDA ---
 @app.route('/api/external_chat', methods=['POST'])
 def external_chat():
     data = request.get_json()
@@ -147,10 +146,10 @@ def external_chat():
     messages_for_api = [{"role": "system", "content": system_prompt}] + conversation_history
 
     try:
-        ollama_url = "http://host.docker.internal:11434/api/chat"
+        ollama_url = "http://localhost:11434/api/chat" # MUDANÇA AQUI
         payload = {"model": "llama3:8b", "messages": messages_for_api, "stream": False}
 
-        response = requests.post(ollama_url, json=payload, timeout=20) # Timeout de 20s
+        response = requests.post(ollama_url, json=payload, timeout=20)
         response.raise_for_status()
         
         response_data = response.json()
@@ -181,8 +180,7 @@ def external_chat():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# 2) Chat Interno (Dashboard)
-# ... (código original mantido) ...
+# ... (O resto do seu código, como o chat interno e a finalização de projeto, permanece igual) ...
 @app.route('/api/project_chat/<int:project_id>', methods=['POST'])
 @login_required
 def project_chat_api(project_id):
@@ -200,8 +198,6 @@ def project_chat_api(project_id):
     except FileNotFoundError:
         return jsonify({"error": "Arquivo de prompt não encontrado."}), 500
     try:
-        # Este endpoint ainda usa a OpenAI, conforme o código original.
-        # Mude a URL e o payload se quiser usar Ollama aqui também.
         import openai
         openai.api_key = os.getenv("OPENAI_API_KEY")
         response = openai.chat.completions.create(
@@ -218,8 +214,6 @@ def project_chat_api(project_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
         
-# 5) Finalização do Projeto
-# ... (código original mantido) ...
 @app.route('/project/finalize/<int:project_id>', methods=['POST'])
 @login_required
 def finalize_project(project_id):

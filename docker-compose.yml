@@ -1,13 +1,9 @@
 services:
   web:
     build: .
-    ports:
-      - "5001:8000"
+    network_mode: "host" # Usa a rede do seu PC
     env_file:
       - .env
-    extra_hosts:
-      # Permite que o container acesse serviços no host usando 'host.docker.internal'
-      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy
@@ -15,6 +11,7 @@ services:
 
   db:
     image: postgres:13
+    network_mode: "host" # Usa a rede do seu PC
     volumes:
       - postgres_data:/var/lib/postgresql/data/
     env_file:
